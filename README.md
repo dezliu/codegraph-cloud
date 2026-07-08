@@ -90,12 +90,14 @@ docker compose up -d
 # Copy environment file
 cp .env.example .env
 
-# Run database migrations
+# Run database migrations (required before starting services)
 pnpm db:migrate
 
 # Start all services in development mode
 pnpm dev
 ```
+
+> **Note:** `pnpm db:migrate` applies versioned SQL from `packages/db-schema/migrations/` to create business tables (projects, api_keys, etc.). Run it on every fresh environment before `pnpm dev`. pg-boss queue tables are created automatically when API/Worker start — no separate migration needed.
 
 ### Services
 
@@ -204,13 +206,23 @@ pnpm build
 
 # Run type checking
 pnpm lint
+```
 
-# Generate Drizzle schema types
+### Database schema changes
+
+Schema is defined in `packages/db-schema/src/schema.ts`. After editing it:
+
+```bash
+# 1. Generate a new migration SQL file from the diff
 pnpm db:generate
 
-# Run database migrations
+# 2. Apply pending migrations to your local PostgreSQL
 pnpm db:migrate
+
+# 3. Commit the new files under packages/db-schema/migrations/
 ```
+
+Do not use `drizzle-kit push` — it alters the database directly without producing migration files, which breaks reproducibility across environments.
 
 ## License
 
