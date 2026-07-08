@@ -64,3 +64,20 @@ export function findNearestCodeGraphRoot(startPath: string): string | null {
   }
   return null;
 }
+
+/**
+ * Check if a directory name is a codegraph data directory
+ */
+export function isCodeGraphDataDir(name: string): boolean {
+  return (
+    name === CODEGRAPH_DIR ||
+    name.startsWith(CODEGRAPH_DIR + '-')
+  );
+}
+
+/**
+ * Get the codegraph directory name
+ */
+export function codeGraphDirName(): string {
+  return CODEGRAPH_DIR;
+}

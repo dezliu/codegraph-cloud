@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiClient } from '../../lib/api';
 
 interface Project {
   id: string;
@@ -22,11 +23,11 @@ export default function ProjectsPage() {
 
   async function fetchProjects() {
     try {
-      // In production, this would call the API
-      // For now, show empty state
-      setLoading(false);
+      const res = await apiClient.listProjects();
+      setProjects(res.data || []);
     } catch (error) {
       console.error('Failed to fetch projects:', error);
+    } finally {
       setLoading(false);
     }
   }
@@ -102,9 +103,19 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: Call API to create project
-    console.log('Create project:', { name, repoUrl, gitProvider });
-    onClose();
+    try {
+      await apiClient.createProject({
+        orgId: 'default',
+        name,
+        repoUrl,
+        gitProvider,
+      });
+      onClose();
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      alert('Failed to create project');
+    }
   }
 
   return (

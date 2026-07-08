@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiClient } from '../../lib/api';
 
 interface ApiKey {
   id: string;
@@ -14,6 +15,33 @@ export default function SettingsPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
   const [showCreateKeyModal, setShowCreateKeyModal] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchApiKeys();
+  }, []);
+
+  async function fetchApiKeys() {
+    try {
+      const res = await apiClient.listApiKeys('default');
+      setApiKeys(res.data || []);
+    } catch (error) {
+      console.error('Failed to fetch API keys:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRevoke(id: string) {
+    if (!confirm('Are you sure you want to revoke this API key?')) return;
+    try {
+      await apiClient.revokeApiKey(id);
+      setApiKeys((keys) => keys.filter((k) => k.id !== id));
+    } catch (error) {
+      console.error('Failed to revoke API key:', error);
+      alert('Failed to revoke API key');
+    }
+  }
 
   return (
     <div>
@@ -77,7 +105,12 @@ export default function SettingsPage() {
                     {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : 'Never'}
                   </td>
                   <td className="py-2">
-                    <button className="text-red-600 hover:underline text-sm">Revoke</button>
+                    <button
+                      onClick={() => handleRevoke(key.id)}
+                      className="text-red-600 hover:underline text-sm"
+                    >
+                      Revoke
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -132,10 +165,17 @@ function CreateApiKeyModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: Call API to create key
-    // For demo, generate a fake key
-    const fakeKey = `cgk_${Math.random().toString(36).slice(2, 42)}`;
-    onCreated(fakeKey);
+    try {
+      const res = await apiClient.createApiKey({
+        orgId: 'default',
+        name,
+        scopes,
+      });
+      onCreated(res.data.key);
+    } catch (error) {
+      console.error('Failed to create API key:', error);
+      alert('Failed to create API key');
+    }
   }
 
   return (

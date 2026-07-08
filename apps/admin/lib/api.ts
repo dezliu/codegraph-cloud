@@ -98,6 +98,15 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Jobs
+  async listSyncJobs(projectId: string) {
+    return this.request<{ data: any[] }>(`/api/jobs/sync/${projectId}`);
+  }
+
+  async listIndexJobs(projectId: string) {
+    return this.request<{ data: any[] }>(`/api/jobs/index/${projectId}`);
+  }
 }
 
 export const apiClient = new ApiClient();

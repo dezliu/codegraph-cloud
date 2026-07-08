@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { apiClient } from '../../../lib/api';
 
 interface Project {
   id: string;
@@ -29,11 +30,22 @@ export default function ProjectDetailPage() {
 
   async function fetchProject() {
     try {
-      // TODO: Call API to fetch project
-      setLoading(false);
+      const res = await apiClient.getProject(projectId);
+      setProject(res.data);
     } catch (error) {
       console.error('Failed to fetch project:', error);
+    } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleTriggerSync() {
+    try {
+      await apiClient.triggerSync(projectId);
+      alert('Sync job scheduled');
+    } catch (error) {
+      console.error('Failed to trigger sync:', error);
+      alert('Failed to trigger sync');
     }
   }
 
@@ -136,7 +148,10 @@ export default function ProjectDetailPage() {
         <div className="bg-white border rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-4">Actions</h2>
           <div className="space-y-2">
-            <button className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+            <button
+              onClick={handleTriggerSync}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
               Trigger Sync
             </button>
             <button className="w-full px-4 py-2 border rounded hover:bg-gray-50">

@@ -11,6 +11,8 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db.js';
 import { projects, syncJobs } from '@codegraph-cloud/db-schema';
 import { getGitProvider } from '../git/index.js';
+import { getBoss } from '../queue.js';
+import { JOB_QUEUES } from '@codegraph-cloud/shared';
 import type { Job } from 'pg-boss';
 
 const GIT_MIRROR_DIR = process.env.GIT_MIRROR_DIR || './data/git-mirrors';
@@ -122,8 +124,14 @@ export async function handleSyncRepo(job: Job<SyncRepoData>): Promise<void> {
 
     console.log(`[SyncWorker] Sync completed for ${projectId}, ${changedFiles.length} files changed`);
 
-    // TODO: Trigger index job via pg-boss
-    // await getBoss().send(JOB_QUEUES.INDEX_PROJECT, { projectId, syncJobId, changedFiles });
+    // Trigger index job after successful sync
+    const boss = await getBoss();
+    await boss.send(JOB_QUEUES.INDEX_PROJECT, {
+      projectId,
+      syncJobId,
+      changedFiles,
+    });
+    console.log(`[SyncWorker] Index job scheduled for ${projectId}`);
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
