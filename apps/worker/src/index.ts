@@ -5,25 +5,29 @@
  * plus an HTTP query endpoint for the MCP server to proxy queries.
  */
 
-import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { JOB_QUEUES } from '@codegraph-cloud/shared';
+import {
+  attachHttpServerErrorHandler,
+  bindHttpServer,
+  releaseHttpServer,
+  JOB_QUEUES,
+} from '@codegraph-cloud/shared';
 import { handleSyncRepo } from './jobs/sync-repo.js';
 import { handleIndexProject } from './jobs/index-project.js';
 import { queryHandler } from './query/handler.js';
 import { getBoss, stopBoss } from './queue.js';
 
 const WORKER_PORT = parseInt(process.env.WORKER_PORT || '3001');
+const HTTP_SERVER_KEY = '__codegraph_worker_http_server__';
 
-// HTTP query server for MCP server proxy
+let shuttingDown = false;
+
 const app = new Hono();
 app.use('*', cors());
 
-// Health check
 app.get('/health', (c) => c.json({ status: 'ok', service: 'worker' }));
 
-// Query endpoint - called by MCP server
 app.post('/query', async (c) => {
   const body = await c.req.json();
   const { projectId, tool, args } = body;
@@ -43,7 +47,6 @@ app.post('/query', async (c) => {
   }
 });
 
-// Status endpoint
 app.get('/status/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   try {
@@ -57,19 +60,40 @@ app.get('/status/:projectId', async (c) => {
   }
 });
 
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Worker] Shutting down (${signal})...`);
+  await releaseHttpServer(HTTP_SERVER_KEY);
+  queryHandler.closeAll();
+  await stopBoss();
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[Worker] Shutdown error:', err);
+    process.exit(1);
+  });
+});
+
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((err) => {
+    console.error('[Worker] Shutdown error:', err);
+    process.exit(1);
+  });
+});
+
 async function main() {
   console.log('[Worker] Starting worker...');
 
-  // Initialize pg-boss
   const boss = await getBoss();
   console.log('[Worker] Job queue initialized');
 
-  // Create queues
   await boss.createQueue(JOB_QUEUES.SYNC_REPO);
-  await boss.createQueue(JOB_QUEUES.INDEX_PROJECT);
   await boss.createQueue(JOB_QUEUES.INCREMENTAL_SYNC);
+  await boss.createQueue(JOB_QUEUES.INDEX_PROJECT);
 
-  // Register workers
   await boss.work(JOB_QUEUES.SYNC_REPO, { teamSize: 3, teamConcurrency: 1 }, handleSyncRepo);
   await boss.work(JOB_QUEUES.INDEX_PROJECT, { teamSize: 2, teamConcurrency: 1 }, handleIndexProject);
 
@@ -77,29 +101,14 @@ async function main() {
   console.log(`  - ${JOB_QUEUES.SYNC_REPO} (teamSize: 3)`);
   console.log(`  - ${JOB_QUEUES.INDEX_PROJECT} (teamSize: 2)`);
 
-  // Start HTTP query server
-  serve({
+  const server = await bindHttpServer(HTTP_SERVER_KEY, {
     fetch: app.fetch,
     port: WORKER_PORT,
   });
+  attachHttpServerErrorHandler(server, 'Worker', WORKER_PORT);
   console.log(`[Worker] Query endpoint running at http://0.0.0.0:${WORKER_PORT}`);
   console.log('[Worker] Ready and waiting for jobs...');
 }
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('[Worker] Shutting down...');
-  queryHandler.closeAll();
-  await stopBoss();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('[Worker] Shutting down...');
-  queryHandler.closeAll();
-  await stopBoss();
-  process.exit(0);
-});
 
 main().catch((err) => {
   console.error('[Worker] Failed to start:', err);

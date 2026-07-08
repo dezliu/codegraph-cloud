@@ -171,26 +171,24 @@ export class CodeGraphEngine {
     const errors: string[] = [];
     
     try {
-      // Run full extraction
-      const result = await this.orchestrator!.indexAll({
-        onProgress,
-      });
+      const result = await this.orchestrator!.indexAll(onProgress);
 
-      // Run reference resolution
       try {
-        const resolutionResult = await this.resolver!.resolveAll();
+        await this.resolver!.resolveAndPersistBatched();
       } catch (err) {
         errors.push(`Resolution error: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      // Post-index maintenance
       this.db!.runMaintenance();
 
       return {
-        filesIndexed: result.filesIndexed ?? result.filesProcessed ?? 0,
-        nodesExtracted: result.nodesExtracted ?? result.totalNodes ?? 0,
+        filesIndexed: result.filesIndexed,
+        nodesExtracted: result.nodesCreated,
         duration: Date.now() - startTime,
-        errors,
+        errors: [
+          ...errors,
+          ...result.errors.map((e) => e.message),
+        ],
       };
     } catch (err) {
       errors.push(`Index error: ${err instanceof Error ? err.message : String(err)}`);
@@ -213,24 +211,23 @@ export class CodeGraphEngine {
     const errors: string[] = [];
     
     try {
-      // Run incremental sync (reconciles with disk state)
       const result = await this.orchestrator!.sync();
 
-      // Run reference resolution for changed files
       try {
-        await this.resolver!.resolveAll();
+        await this.resolver!.resolveAndPersistBatched();
       } catch (err) {
         errors.push(`Resolution error: ${err instanceof Error ? err.message : String(err)}`);
       }
 
-      // Post-sync maintenance
       this.db!.runMaintenance();
 
+      const filesChanged = result.filesAdded + result.filesModified;
+
       return {
-        filesIndexed: result.filesIndexed ?? result.filesProcessed ?? 0,
-        nodesExtracted: result.nodesExtracted ?? result.totalNodes ?? 0,
-        filesChanged: result.filesChanged ?? options.changedFiles?.length ?? 0,
-        filesDeleted: result.filesDeleted ?? 0,
+        filesIndexed: filesChanged,
+        nodesExtracted: result.nodesUpdated,
+        filesChanged,
+        filesDeleted: result.filesRemoved,
         duration: Date.now() - startTime,
         errors,
       };
@@ -250,17 +247,17 @@ export class CodeGraphEngine {
   /**
    * Explore the code graph - find symbols matching a query
    */
-  explore(query: string, options?: { depth?: number }): ExploreResult {
+  async explore(query: string, options?: { depth?: number }): Promise<ExploreResult> {
     this.ensureInitialized();
     
     try {
-      // Use context builder to find relevant context
-      const context = this.contextBuilder!.buildContext(query, {
-        maxDepth: options?.depth ?? 2,
-      });
+      const depth = options?.depth ?? 2;
+      const [subgraph, context] = await Promise.all([
+        this.contextBuilder!.findRelevantContext(query, { traversalDepth: depth }),
+        this.contextBuilder!.buildContext(query, { traversalDepth: depth }),
+      ]);
 
-      // Extract nodes and edges from context
-      const nodes = (context.nodes || []).map((n: Node) => ({
+      const nodes = Array.from(subgraph.nodes.values()).map((n) => ({
         id: n.id,
         name: n.name,
         kind: n.kind,
@@ -269,17 +266,15 @@ export class CodeGraphEngine {
         endLine: n.endLine,
       }));
 
-      const edges = (context.edges || []).map((e: Edge) => ({
+      const edges = subgraph.edges.map((e) => ({
         source: e.source,
         target: e.target,
         kind: e.kind,
       }));
 
-      return {
-        content: context.markdown || '',
-        nodes,
-        edges,
-      };
+      const content = typeof context === 'string' ? context : context.summary;
+
+      return { content, nodes, edges };
     } catch {
       return { content: '', nodes: [], edges: [] };
     }
@@ -297,14 +292,14 @@ export class CodeGraphEngine {
       });
       
       return results.map((r: CoreSearchResult) => ({
-        id: r.id,
-        name: r.name,
-        qualifiedName: r.qualifiedName,
-        kind: r.kind,
-        filePath: r.filePath,
-        startLine: r.startLine,
-        endLine: r.endLine,
-        docstring: r.docstring ?? null,
+        id: r.node.id,
+        name: r.node.name,
+        qualifiedName: r.node.qualifiedName,
+        kind: r.node.kind,
+        filePath: r.node.filePath,
+        startLine: r.node.startLine,
+        endLine: r.node.endLine,
+        docstring: r.node.docstring ?? null,
         score: r.score ?? 0,
       }));
     } catch {
@@ -370,7 +365,7 @@ export class CodeGraphEngine {
       const nodeId = this.resolveNodeId(nodeIdOrName);
       if (!nodeId) return null;
       
-      return this.graphManager!.getImpactRadius(nodeId, depth);
+      return this.traverser!.getImpactRadius(nodeId, depth);
     } catch {
       return null;
     }
@@ -425,7 +420,7 @@ export class CodeGraphEngine {
 
     // Fall back to name search
     const results = this.queries!.searchNodes(idOrName, { limit: 1 });
-    if (results.length > 0) return results[0].id;
+    if (results.length > 0) return results[0].node.id;
 
     return null;
   }

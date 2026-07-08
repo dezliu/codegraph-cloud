@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --exclude '../../packages/**/dist/**' src/index.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "@codegraph-cloud/shared": "workspace:*",
     "@codegraph-cloud/db-schema": "workspace:*",
     "@codegraph-cloud/core": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
     "drizzle-orm": "^0.38.0",
     "postgres": "^3.4.0",
     "pg-boss": "^10.1.0",

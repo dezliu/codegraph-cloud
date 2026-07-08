@@ -1,5 +1,5 @@
 import type { Node as SyntaxNode } from 'web-tree-sitter';
-import { Node, Edge, ExtractionResult, ExtractionError, UnresolvedReference, Language } from '../types';
+import { Node as GraphNode, Edge, ExtractionResult, ExtractionError, UnresolvedReference, Language } from '../types';
 import { generateNodeId } from './tree-sitter-helpers';
 import { TreeSitterExtractor } from './tree-sitter';
 import { getParser } from './grammars';
@@ -21,7 +21,7 @@ export class CfmlExtractor {
   private filePath: string;
   private source: string;
   private language: Language;
-  private nodes: Node[] = [];
+  private nodes: GraphNode[] = [];
   private edges: Edge[] = [];
   private unresolvedReferences: UnresolvedReference[] = [];
   private errors: ExtractionError[] = [];
@@ -117,10 +117,10 @@ export class CfmlExtractor {
   }
 
   /** Build the file's own `kind:'file'` node, spanning the whole source. Tag-based files need this explicitly — unlike `extractBareScript` (which delegates the whole file to `TreeSitterExtractor` and inherits its file node), `extractTagBased` walks the tree itself and has no other source of one. */
-  private createFileNode(): Node {
+  private createFileNode(): GraphNode {
     const lines = this.source.split('\n');
     const id = generateNodeId(this.filePath, 'file', this.filePath, 1);
-    const fileNode: Node = {
+    const fileNode: GraphNode = {
       id,
       kind: 'file',
       name: this.filePath.split(/[/\\]/).pop() || this.filePath,
@@ -176,7 +176,7 @@ export class CfmlExtractor {
     const name = this.tagAttr(openTag, 'name') ?? this.componentNameFromPath();
     const id = generateNodeId(this.filePath, 'class', name, openTag.startPosition.row + 1);
 
-    const classNode: Node = {
+    const classNode: GraphNode = {
       id,
       kind: 'class',
       name,
@@ -268,7 +268,7 @@ export class CfmlExtractor {
       : access ? 'public'
       : undefined;
 
-    const fnNode: Node = {
+    const fnNode: GraphNode = {
       id,
       kind,
       name,

@@ -4,10 +4,14 @@
  * REST API + Webhook receiver + Job scheduler
  */
 
-import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import {
+  attachHttpServerErrorHandler,
+  bindHttpServer,
+  releaseHttpServer,
+} from '@codegraph-cloud/shared';
 import { projectsRouter } from './routes/projects.js';
 import { apiKeysRouter } from './routes/api-keys.js';
 import { webhooksRouter } from './routes/webhooks.js';
@@ -17,54 +21,56 @@ import { getBoss, stopBoss } from './queue.js';
 
 const app = new Hono();
 
-// Global middleware
 app.use('*', cors());
 app.use('*', logger());
 
-// Health check (no auth)
 app.get('/health', (c) => c.json({ status: 'ok', service: 'api' }));
-
-// Webhook routes (no auth - verified by webhook secret)
 app.route('/webhooks', webhooksRouter);
-
-// Protected routes (require API key)
 app.use('/api/*', authMiddleware);
-
-// API routes
 app.route('/api/projects', projectsRouter);
 app.route('/api/api-keys', apiKeysRouter);
 app.route('/api/jobs', jobsRouter);
 
-// Start server
 const port = parseInt(process.env.API_PORT || '3000');
 const host = process.env.API_HOST || '0.0.0.0';
+const HTTP_SERVER_KEY = '__codegraph_api_http_server__';
+
+let shuttingDown = false;
 
 async function main() {
-  // Initialize pg-boss
   await getBoss();
   console.log('[API] Job queue initialized');
 
-  // Start HTTP server
-  serve({
+  const server = await bindHttpServer(HTTP_SERVER_KEY, {
     fetch: app.fetch,
     port,
     hostname: host,
   });
-
+  attachHttpServerErrorHandler(server, 'API', port);
   console.log(`[API] Server running at http://${host}:${port}`);
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('[API] Shutting down...');
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[API] Shutting down (${signal})...`);
+  await releaseHttpServer(HTTP_SERVER_KEY);
   await stopBoss();
   process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[API] Shutdown error:', err);
+    process.exit(1);
+  });
 });
 
-process.on('SIGINT', async () => {
-  console.log('[API] Shutting down...');
-  await stopBoss();
-  process.exit(0);
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((err) => {
+    console.error('[API] Shutdown error:', err);
+    process.exit(1);
+  });
 });
 
 main().catch((err) => {

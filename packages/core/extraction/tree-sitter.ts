@@ -8,7 +8,7 @@ import { Node as SyntaxNode, Tree } from 'web-tree-sitter';
 import * as path from 'path';
 import {
   Language,
-  Node,
+  Node as GraphNode,
   Edge,
   NodeKind,
   ExtractionResult,
@@ -367,7 +367,7 @@ export class TreeSitterExtractor {
   private language: Language;
   private source: string;
   private tree: Tree | null = null;
-  private nodes: Node[] = [];
+  private nodes: GraphNode[] = [];
   private edges: Edge[] = [];
   private unresolvedReferences: UnresolvedReference[] = [];
   // Value-reference edges (default ON; set CODEGRAPH_VALUE_REFS=0 to disable; see flushValueRefs).
@@ -469,7 +469,7 @@ export class TreeSitterExtractor {
       }
 
       // Create file node representing the source file
-      const fileNode: Node = {
+      const fileNode: GraphNode = {
         id: `file:${this.filePath}`,
         kind: 'file',
         name: path.basename(this.filePath),
@@ -1273,8 +1273,8 @@ export class TreeSitterExtractor {
     kind: NodeKind,
     name: string,
     node: SyntaxNode,
-    extra?: Partial<Node>
-  ): Node | null {
+    extra?: Partial<GraphNode>
+  ): GraphNode | null {
     // Skip nodes with empty/missing names — they are not meaningful symbols
     // and would cause FK violations when edges reference them (see issue #42)
     if (!name) {
@@ -1297,7 +1297,7 @@ export class TreeSitterExtractor {
       }
     }
 
-    const newNode: Node = {
+    const newNode: GraphNode = {
       id,
       kind,
       name,
@@ -1717,7 +1717,7 @@ export class TreeSitterExtractor {
     const isAsync = this.extractor.isAsync?.(node);
     const isStatic = this.extractor.isStatic?.(node);
     const returnType = this.extractor.getReturnType?.(node, this.source);
-    const extraProps: Partial<Node> = {
+    const extraProps: Partial<GraphNode> = {
       docstring,
       signature,
       visibility,
@@ -1921,7 +1921,7 @@ export class TreeSitterExtractor {
    * Extract a class property declaration (e.g. C# `public string Name { get; set; }`).
    * Extracts as 'property' kind node inside the owning class.
    */
-  private extractProperty(node: SyntaxNode): Node | null {
+  private extractProperty(node: SyntaxNode): GraphNode | null {
     if (!this.extractor) return null;
 
     const docstring = getPrecedingDocstring(node, this.source);
@@ -2672,7 +2672,7 @@ export class TreeSitterExtractor {
 
       for (const spec of specs) {
         const nameNode = spec.namedChild(0);
-        let varNode: Node | null = null;
+        let varNode: GraphNode | null = null;
         if (nameNode && nameNode.type === 'identifier') {
           const name = getNodeText(nameNode, this.source);
           const valueNode = spec.namedChildCount > 1 ? spec.namedChild(spec.namedChildCount - 1) : null;
@@ -2960,7 +2960,7 @@ export class TreeSitterExtractor {
    * nested object types inside generic arguments (`Promise<{ ok: true }>`)
    * don't produce phantom members.
    */
-  private extractTsTypeAliasMembers(value: SyntaxNode, typeAliasNode: Node): void {
+  private extractTsTypeAliasMembers(value: SyntaxNode, typeAliasNode: GraphNode): void {
     const objectTypes: SyntaxNode[] = [];
     if (value.type === 'object_type') {
       objectTypes.push(value);
@@ -3036,7 +3036,7 @@ export class TreeSitterExtractor {
    * (`Service<'a', Pick<U, 'id'>>` yields only `a`, never `id`). Names must be
    * valid identifiers, which also rules out route paths / arbitrary strings.
    */
-  private extractTsTupleContractNames(value: SyntaxNode, typeAliasNode: Node): void {
+  private extractTsTupleContractNames(value: SyntaxNode, typeAliasNode: GraphNode): void {
     const tuples: SyntaxNode[] = [];
     const collectTuples = (n: SyntaxNode, depth: number): void => {
       if (depth > 6) return; // a type expression is shallow; cap defensively

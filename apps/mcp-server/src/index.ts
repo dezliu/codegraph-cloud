@@ -5,10 +5,14 @@
  * Clients (Cursor, Claude) connect via HTTP and query project indexes.
  */
 
-import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { eq } from 'drizzle-orm';
+import {
+  attachHttpServerErrorHandler,
+  bindHttpServer,
+  releaseHttpServer,
+} from '@codegraph-cloud/shared';
 import { db } from './db.js';
 import { projects, apiKeys } from '@codegraph-cloud/db-schema';
 import { CodeGraphEngine } from '@codegraph-cloud/core';
@@ -198,34 +202,50 @@ app.get('/mcp/sse', (c) => {
   return c.json({ message: 'SSE not yet implemented' }, 501);
 });
 
-// Start server
 const port = parseInt(process.env.MCP_PORT || '3002');
+const HTTP_SERVER_KEY = '__codegraph_mcp_http_server__';
 
-async function main() {
-  serve({
-    fetch: app.fetch,
-    port,
-  });
-  console.log(`[MCP] Server running at http://0.0.0.0:${port}`);
-  console.log(`[MCP] Endpoint: POST /mcp`);
-}
+let shuttingDown = false;
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('[MCP] Shutting down...');
+function closeEngines(): void {
   for (const engine of engineCache.values()) {
     engine.close();
   }
+  engineCache.clear();
+}
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[MCP] Shutting down (${signal})...`);
+  await releaseHttpServer(HTTP_SERVER_KEY);
+  closeEngines();
   process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[MCP] Shutdown error:', err);
+    process.exit(1);
+  });
 });
 
 process.on('SIGINT', () => {
-  console.log('[MCP] Shutting down...');
-  for (const engine of engineCache.values()) {
-    engine.close();
-  }
-  process.exit(0);
+  shutdown('SIGINT').catch((err) => {
+    console.error('[MCP] Shutdown error:', err);
+    process.exit(1);
+  });
 });
+
+async function main() {
+  const server = await bindHttpServer(HTTP_SERVER_KEY, {
+    fetch: app.fetch,
+    port,
+  });
+  attachHttpServerErrorHandler(server, 'MCP', port);
+  console.log(`[MCP] Server running at http://0.0.0.0:${port}`);
+  console.log(`[MCP] Endpoint: POST /mcp`);
+}
 
 main().catch((err) => {
   console.error('[MCP] Failed to start:', err);

@@ -1645,8 +1645,11 @@ export class ExtractionOrchestrator {
         const item = completed.get(nextToStore)!;
         completed.delete(nextToStore);
         nextToStore++;
-        if (item.ok) storeResult(item.filePath, item.content, item.stats, item.result);
-        else recordParseFailure(item.filePath, item.err);
+        if (item.ok) {
+          storeResult(item.filePath, item.content, item.stats, item.result);
+        } else if (item.ok === false) {
+          recordParseFailure(item.filePath, item.err);
+        }
       }
     };
 

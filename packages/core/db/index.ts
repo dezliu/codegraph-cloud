@@ -4,14 +4,15 @@
  * Handles SQLite database initialization and connection management.
  */
 
-import { SqliteDatabase, SqliteBackend, createDatabase } from './sqlite-adapter';
+import { createDatabase } from './sqlite-adapter.js';
+import type { SqliteDatabase, SqliteBackend } from './sqlite-adapter.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SchemaVersion } from '../types';
 import { runMigrations, getCurrentVersion, CURRENT_SCHEMA_VERSION } from './migrations';
 import { getCodeGraphDir } from '../directory';
 
-export { SqliteDatabase, SqliteBackend } from './sqlite-adapter';
+export type { SqliteDatabase, SqliteBackend } from './sqlite-adapter.js';
 
 /**
  * Apply connection-level PRAGMAs. Shared by `initialize` and `open` so the two
