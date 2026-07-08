@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: codegraph-cloud-db
+    environment:
+      POSTGRES_USER: codegraph
+      POSTGRES_PASSWORD: codegraph_dev
+      POSTGRES_DB: codegraph_cloud
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codegraph -d codegraph_cloud"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Redis for future use if pg-boss is not enough
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+
+volumes:
+  pgdata:
