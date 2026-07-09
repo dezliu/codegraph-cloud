@@ -14,6 +14,8 @@ import { getGitProvider } from '../git/index.js';
 import { getBoss } from '../queue.js';
 import { JOB_QUEUES } from '@codegraph-cloud/shared';
 import type { Job } from 'pg-boss';
+import { withGitCredentials } from '@codegraph-cloud/shared';
+import { getProjectCredentials } from '../git/credentials.js';
 
 const GIT_MIRROR_DIR = process.env.GIT_MIRROR_DIR || './data/git-mirrors';
 const GIT_WORKSPACE_DIR = process.env.GIT_WORKSPACE_DIR || './data/git-workspace';
@@ -49,6 +51,8 @@ export async function handleSyncRepo(job: Job<SyncRepoData>): Promise<void> {
     }
 
     const gitProvider = getGitProvider(project.gitProvider as any);
+    const credentials = getProjectCredentials(project);
+    const authenticatedRepoUrl = withGitCredentials(project.repoUrl, credentials);
     const mirrorDir = path.join(GIT_MIRROR_DIR, projectId);
     const workDir = path.join(GIT_WORKSPACE_DIR, projectId);
 
@@ -61,20 +65,21 @@ export async function handleSyncRepo(job: Job<SyncRepoData>): Promise<void> {
     if (!isBareRepo) {
       console.log(`[SyncWorker] Cloning ${project.repoUrl} to mirror`);
       await gitProvider.clone({
-        repoUrl: project.repoUrl,
+        repoUrl: authenticatedRepoUrl,
         targetDir: mirrorDir,
         branch: project.defaultBranch,
+        credentials,
       });
     } else {
       // Fetch updates
       console.log(`[SyncWorker] Fetching updates for ${projectId}`);
-      await gitProvider.fetch(mirrorDir);
+      await gitProvider.fetch(mirrorDir, credentials);
     }
 
     // Determine target commit
     let targetSha = commitSha;
     if (!targetSha) {
-      targetSha = await gitProvider.getRemoteHead(project.repoUrl, project.defaultBranch);
+      targetSha = await gitProvider.getRemoteHead(authenticatedRepoUrl, project.defaultBranch, credentials);
     }
 
     // Get changed files (if we have a previous commit)

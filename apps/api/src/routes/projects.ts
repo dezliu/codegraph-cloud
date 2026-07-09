@@ -5,18 +5,19 @@
 import { Hono } from 'hono';
 import { projectService } from '../services/project.service.js';
 import { schedulerService } from '../services/scheduler.service.js';
+import { requireScope } from '../middleware/auth.js';
 
 export const projectsRouter = new Hono();
 
 // List projects
-projectsRouter.get('/', async (c) => {
+projectsRouter.get('/', requireScope('read'), async (c) => {
   const orgId = c.req.query('orgId');
   const projects = await projectService.list(orgId);
   return c.json({ data: projects });
 });
 
 // Get project by ID
-projectsRouter.get('/:id', async (c) => {
+projectsRouter.get('/:id', requireScope('read'), async (c) => {
   const id = c.req.param('id');
   const project = await projectService.getById(id);
   if (!project) {
@@ -26,20 +27,22 @@ projectsRouter.get('/:id', async (c) => {
 });
 
 // Create project
-projectsRouter.post('/', async (c) => {
+projectsRouter.post('/', requireScope('write'), async (c) => {
   const body = await c.req.json();
   const project = await projectService.create(body);
 
-  // Setup polling if enabled
   if (project.pollEnabled && project.pollIntervalSec > 0) {
     await schedulerService.setupPollingSchedule(project.id, project.pollIntervalSec);
   }
 
-  return c.json({ data: project }, 201);
+  // Schedule initial sync + index
+  const jobId = await schedulerService.scheduleSyncJob(project.id, null, 'manual');
+
+  return c.json({ data: { ...project, initialSyncJobId: jobId } }, 201);
 });
 
 // Update project
-projectsRouter.patch('/:id', async (c) => {
+projectsRouter.patch('/:id', requireScope('write'), async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
 
@@ -48,7 +51,6 @@ projectsRouter.patch('/:id', async (c) => {
     return c.json({ error: 'Project not found' }, 404);
   }
 
-  // Update polling schedule if changed
   if (body.pollEnabled !== undefined || body.pollIntervalSec !== undefined) {
     if (project.pollEnabled && project.pollIntervalSec > 0) {
       await schedulerService.setupPollingSchedule(project.id, project.pollIntervalSec);
@@ -61,21 +63,20 @@ projectsRouter.patch('/:id', async (c) => {
 });
 
 // Delete project
-projectsRouter.delete('/:id', async (c) => {
+projectsRouter.delete('/:id', requireScope('admin'), async (c) => {
   const id = c.req.param('id');
   const deleted = await projectService.delete(id);
   if (!deleted) {
     return c.json({ error: 'Project not found' }, 404);
   }
 
-  // Remove polling schedule
   await schedulerService.removePollingSchedule(id);
 
   return c.json({ success: true });
 });
 
 // Trigger manual sync
-projectsRouter.post('/:id/sync', async (c) => {
+projectsRouter.post('/:id/sync', requireScope('write'), async (c) => {
   const id = c.req.param('id');
   const project = await projectService.getById(id);
   if (!project) {

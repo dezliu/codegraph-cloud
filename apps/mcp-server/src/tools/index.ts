@@ -133,7 +133,6 @@ export async function executeTool(
       return engine.search(args.query, { limit: args.limit });
 
     case 'codegraph_callers':
-      // TODO: Implement symbol lookup by name
       return engine.getCallers(args.symbolName);
 
     case 'codegraph_callees':

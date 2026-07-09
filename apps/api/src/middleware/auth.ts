@@ -42,12 +42,22 @@ export async function authMiddleware(c: Context, next: Next) {
 }
 
 /**
- * Require specific scope
+ * Require specific scope (admin implies write + read; write implies read)
  */
 export function requireScope(scope: string) {
   return async (c: Context, next: Next) => {
     const apiKey = c.get('apiKey');
-    if (!apiKey || !apiKey.scopes.includes(scope)) {
+    if (!apiKey) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const scopes = apiKey.scopes;
+    const allowed =
+      scopes.includes(scope) ||
+      (scope === 'read' && (scopes.includes('write') || scopes.includes('admin'))) ||
+      (scope === 'write' && scopes.includes('admin'));
+
+    if (!allowed) {
       return c.json({ error: `Insufficient permissions. Required scope: ${scope}` }, 403);
     }
     await next();

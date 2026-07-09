@@ -9,11 +9,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../apps/api/package.json', import.meta.url));
 const postgres = require('postgres');
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  console.error('DATABASE_URL is required');
-  process.exit(1);
-}
+const DEFAULT_DATABASE_URL =
+  'postgresql://codegraph:codegraph_dev@localhost:5432/codegraph_cloud';
+const DATABASE_URL = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
 
 const ORG_ID = 'default';
 const API_KEY_PREFIX = 'cgk_';

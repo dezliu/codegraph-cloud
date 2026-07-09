@@ -6,8 +6,11 @@ import { Hono } from 'hono';
 import { eq, desc } from 'drizzle-orm';
 import { db } from '../db.js';
 import { syncJobs, indexJobs } from '@codegraph-cloud/db-schema';
+import { requireScope } from '../middleware/auth.js';
 
 export const jobsRouter = new Hono();
+
+jobsRouter.use('*', requireScope('read'));
 
 // List sync jobs for a project
 jobsRouter.get('/sync/:projectId', async (c) => {

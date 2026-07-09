@@ -103,6 +103,7 @@ class ApiClient {
     repoUrl: string;
     defaultBranch?: string;
     gitProvider?: string;
+    gitToken?: string;
   }) {
     return this.request<{ data: any }>('/api/projects', {
       method: 'POST',
@@ -110,7 +111,7 @@ class ApiClient {
     });
   }
 
-  async updateProject(id: string, data: Record<string, any>) {
+  async updateProject(id: string, data: Record<string, unknown>) {
     return this.request<{ data: any }>(`/api/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

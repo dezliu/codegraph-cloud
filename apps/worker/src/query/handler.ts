@@ -10,6 +10,7 @@ import { CodeGraphEngine } from '@codegraph-cloud/core';
 import { eq } from 'drizzle-orm';
 import { db } from '../db.js';
 import { projects } from '@codegraph-cloud/db-schema';
+import { ensureLocalIndexDb } from '@codegraph-cloud/shared';
 
 const GIT_WORKSPACE_DIR = process.env.GIT_WORKSPACE_DIR || './data/git-workspace';
 
@@ -17,34 +18,37 @@ const GIT_WORKSPACE_DIR = process.env.GIT_WORKSPACE_DIR || './data/git-workspace
  * QueryHandler manages engine instances and routes queries
  */
 export class QueryHandler {
-  private engines = new Map<string, CodeGraphEngine>();
+  private engines = new Map<string, { engine: CodeGraphEngine; indexedAt: number | null }>();
 
   /**
    * Get or create an engine for a project
    */
   async getEngine(projectId: string): Promise<CodeGraphEngine | null> {
-    // Check cache
-    if (this.engines.has(projectId)) {
-      return this.engines.get(projectId)!;
-    }
-
-    // Get project info
     const result = await db.select().from(projects).where(eq(projects.id, projectId));
     const project = result[0];
     if (!project) return null;
 
-    // Check if project has been indexed
+    const projectIndexedAt = project.lastIndexedAt?.getTime() ?? null;
+    const cached = this.engines.get(projectId);
+    if (cached && cached.indexedAt === projectIndexedAt) {
+      return cached.engine;
+    }
+    if (cached) {
+      this.invalidate(projectId);
+    }
+
     if (!project.lastIndexedAt) return null;
 
     const workDir = path.join(GIT_WORKSPACE_DIR, projectId);
     const indexConfig = project.indexConfig as { exclude?: string[]; include?: string[]; extensions?: string[] };
 
     try {
+      await ensureLocalIndexDb(projectId, workDir);
       const engine = await CodeGraphEngine.open({
         projectRoot: workDir,
         indexConfig,
       });
-      this.engines.set(projectId, engine);
+      this.engines.set(projectId, { engine, indexedAt: projectIndexedAt });
       return engine;
     } catch (err) {
       console.error(`[QueryHandler] Failed to open engine for ${projectId}:`, err);
@@ -83,21 +87,17 @@ export class QueryHandler {
    * Invalidate a project's engine (e.g., after re-index)
    */
   invalidate(projectId: string): void {
-    const engine = this.engines.get(projectId);
-    if (engine) {
-      engine.close();
+    const cached = this.engines.get(projectId);
+    if (cached) {
+      cached.engine.close();
       this.engines.delete(projectId);
     }
   }
 
-  /**
-   * Close all engines
-   */
   closeAll(): void {
-    for (const [, engine] of this.engines) {
-      engine.close();
+    for (const projectId of this.engines.keys()) {
+      this.invalidate(projectId);
     }
-    this.engines.clear();
   }
 }
 

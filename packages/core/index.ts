@@ -372,6 +372,19 @@ export class CodeGraphEngine {
   }
 
   /**
+   * Persist index metadata (commit SHA, timestamp) into the SQLite store.
+   */
+  setIndexMetadata(metadata: { commitSha?: string | null; indexedAt?: number }): void {
+    this.ensureInitialized();
+    if (metadata.commitSha) {
+      this.queries!.setMetadata('indexed_commit_sha', metadata.commitSha);
+    }
+    if (metadata.indexedAt !== undefined) {
+      this.queries!.setMetadata('last_indexed_at', String(metadata.indexedAt));
+    }
+  }
+
+  /**
    * Get index status information
    */
   getStatus(): {
@@ -387,12 +400,14 @@ export class CodeGraphEngine {
 
     try {
       const stats = this.queries!.getStats();
+      const indexedAtRaw = this.queries!.getMetadata('last_indexed_at');
+      const commitSha = this.queries!.getMetadata('indexed_commit_sha');
       return {
         indexed: true,
-        lastIndexedAt: new Date(), // TODO: store actual last indexed time
+        lastIndexedAt: indexedAtRaw ? new Date(parseInt(indexedAtRaw, 10)) : null,
         filesIndexed: stats.fileCount ?? 0,
         nodesCount: stats.nodeCount ?? 0,
-        commitSha: null, // TODO: read from project_metadata
+        commitSha,
       };
     } catch {
       return { indexed: false, lastIndexedAt: null, filesIndexed: 0, nodesCount: 0, commitSha: null };

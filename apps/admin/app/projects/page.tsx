@@ -114,6 +114,8 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [gitProvider, setGitProvider] = useState('gitlab');
+  const [gitToken, setGitToken] = useState('');
+  const [defaultBranch, setDefaultBranch] = useState('main');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,6 +125,8 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
         name,
         repoUrl,
         gitProvider,
+        defaultBranch,
+        ...(gitToken ? { gitToken } : {}),
       });
       onClose();
       window.location.reload();
@@ -168,6 +172,26 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
               <option value="gitlab">GitLab</option>
               <option value="github">GitHub</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Default Branch</label>
+            <input
+              type="text"
+              value={defaultBranch}
+              onChange={(e) => setDefaultBranch(e.target.value)}
+              className="w-full px-3 py-2 border rounded"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Git Token (optional)</label>
+            <input
+              type="password"
+              value={gitToken}
+              onChange={(e) => setGitToken(e.target.value)}
+              placeholder="For private repositories"
+              className="w-full px-3 py-2 border rounded font-mono text-sm"
+              autoComplete="off"
+            />
           </div>
           <div className="flex gap-2 pt-4">
             <button

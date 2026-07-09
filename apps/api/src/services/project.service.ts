@@ -2,11 +2,20 @@
  * Project service - CRUD operations
  */
 
+import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db.js';
 import { projects, type ProjectRow, type NewProject } from '@codegraph-cloud/db-schema';
-import type { IndexConfig, GitProvider, ProjectStatus } from '@codegraph-cloud/shared';
+import {
+  encryptGitCredentials,
+  repoPathsMatch,
+  webhookUrlForProvider,
+  WEBHOOK_SECRET_LENGTH,
+  type IndexConfig,
+  type GitProvider,
+  type ProjectStatus,
+} from '@codegraph-cloud/shared';
 
 export interface CreateProjectInput {
   orgId: string;
@@ -14,6 +23,7 @@ export interface CreateProjectInput {
   repoUrl: string;
   defaultBranch?: string;
   gitProvider?: GitProvider;
+  gitToken?: string;
   indexConfig?: IndexConfig;
   pollIntervalSec?: number;
   pollEnabled?: boolean;
@@ -23,6 +33,7 @@ export interface UpdateProjectInput {
   name?: string;
   defaultBranch?: string;
   gitProvider?: GitProvider;
+  gitToken?: string;
   indexConfig?: IndexConfig;
   pollIntervalSec?: number;
   pollEnabled?: boolean;
@@ -32,7 +43,19 @@ export interface UpdateProjectInput {
   lastIndexedAt?: Date;
   webhookSecret?: string;
   webhookUrl?: string;
-  credentialsRef?: string;
+  credentialsRef?: string | null;
+}
+
+function getEncryptionKey(): string {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) {
+    throw new Error('ENCRYPTION_KEY is required to store Git credentials');
+  }
+  return key;
+}
+
+function encryptToken(gitToken: string): string {
+  return encryptGitCredentials({ type: 'token', token: gitToken }, getEncryptionKey());
 }
 
 export class ProjectService {
@@ -53,18 +76,33 @@ export class ProjectService {
     return result[0];
   }
 
+  async findByRepoPath(repoPath: string, gitProvider?: GitProvider): Promise<ProjectRow | undefined> {
+    const allProjects = await this.list();
+    return allProjects.find((p) => {
+      if (gitProvider && p.gitProvider !== gitProvider) return false;
+      return repoPathsMatch(p.repoUrl, repoPath);
+    });
+  }
+
   async create(input: CreateProjectInput): Promise<ProjectRow> {
     const id = `proj_${nanoid(24)}`;
+    const gitProvider = input.gitProvider || 'gitlab';
+    const webhookBaseUrl = process.env.WEBHOOK_BASE_URL || 'http://localhost:3000';
+    const webhookSecret = crypto.randomBytes(WEBHOOK_SECRET_LENGTH).toString('hex');
+
     const newProject: NewProject = {
       id,
       orgId: input.orgId,
       name: input.name,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch || 'main',
-      gitProvider: input.gitProvider || 'gitlab',
+      gitProvider,
+      credentialsRef: input.gitToken ? encryptToken(input.gitToken) : null,
+      webhookSecret,
+      webhookUrl: webhookUrlForProvider(webhookBaseUrl, gitProvider),
       indexConfig: input.indexConfig || {},
-      pollIntervalSec: input.pollIntervalSec || 300,
-      pollEnabled: input.pollEnabled || false,
+      pollIntervalSec: input.pollIntervalSec ?? 300,
+      pollEnabled: input.pollEnabled ?? false,
       status: 'initializing',
     };
 
@@ -73,9 +111,16 @@ export class ProjectService {
   }
 
   async update(id: string, input: UpdateProjectInput): Promise<ProjectRow | undefined> {
+    const { gitToken, ...rest } = input;
+    const updates: UpdateProjectInput = { ...rest };
+
+    if (gitToken !== undefined) {
+      updates.credentialsRef = gitToken ? encryptToken(gitToken) : null;
+    }
+
     const result = await db
       .update(projects)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(projects.id, id))
       .returning();
     return result[0];

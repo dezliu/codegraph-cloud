@@ -12,6 +12,7 @@ import {
   attachHttpServerErrorHandler,
   bindHttpServer,
   releaseHttpServer,
+  ensureLocalIndexDb,
 } from '@codegraph-cloud/shared';
 import { db } from './db.js';
 import { projects, apiKeys } from '@codegraph-cloud/db-schema';
@@ -26,36 +27,47 @@ const app = new Hono();
 app.use('*', cors());
 
 // Engine cache - keep engines alive for active projects
-const engineCache = new Map<string, CodeGraphEngine>();
+const engineCache = new Map<string, { engine: CodeGraphEngine; indexedAt: number | null }>();
 const GIT_WORKSPACE_DIR = process.env.GIT_WORKSPACE_DIR || './data/git-workspace';
+
+function invalidateEngine(projectId: string): void {
+  const cached = engineCache.get(projectId);
+  if (cached) {
+    cached.engine.close();
+    engineCache.delete(projectId);
+  }
+}
 
 /**
  * Get or create an engine for a project
  */
 async function getEngine(projectId: string): Promise<CodeGraphEngine | null> {
-  // Check cache
-  if (engineCache.has(projectId)) {
-    return engineCache.get(projectId)!;
-  }
-
-  // Get project info
   const result = await db.select().from(projects).where(eq(projects.id, projectId));
   const project = result[0];
   if (!project) return null;
 
-  const workDir = path.join(GIT_WORKSPACE_DIR, projectId);
-  
-  // Check if project has been indexed
+  const projectIndexedAt = project.lastIndexedAt?.getTime() ?? null;
+  const cached = engineCache.get(projectId);
+  if (cached && cached.indexedAt === projectIndexedAt) {
+    return cached.engine;
+  }
+  if (cached) {
+    invalidateEngine(projectId);
+  }
+
   if (!project.lastIndexedAt) {
     return null;
   }
 
+  const workDir = path.join(GIT_WORKSPACE_DIR, projectId);
+
   try {
+    await ensureLocalIndexDb(projectId, workDir);
     const engine = await CodeGraphEngine.open({
       projectRoot: workDir,
       indexConfig: project.indexConfig as any,
     });
-    engineCache.set(projectId, engine);
+    engineCache.set(projectId, { engine, indexedAt: projectIndexedAt });
     return engine;
   } catch (err) {
     console.error(`[MCP] Failed to open engine for ${projectId}:`, err);
@@ -82,6 +94,13 @@ async function validateApiKey(key: string): Promise<{ orgId: string; projectId: 
 
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', service: 'mcp-server' }));
+
+// Internal: invalidate engine cache after re-index (called by worker)
+app.post('/internal/invalidate/:projectId', (c) => {
+  const projectId = c.req.param('projectId');
+  invalidateEngine(projectId);
+  return c.json({ success: true });
+});
 
 // MCP endpoint - Streamable HTTP
 app.post('/mcp', async (c) => {
@@ -208,10 +227,9 @@ const HTTP_SERVER_KEY = '__codegraph_mcp_http_server__';
 let shuttingDown = false;
 
 function closeEngines(): void {
-  for (const engine of engineCache.values()) {
-    engine.close();
+  for (const projectId of engineCache.keys()) {
+    invalidateEngine(projectId);
   }
-  engineCache.clear();
 }
 
 async function shutdown(signal: string): Promise<void> {

@@ -188,7 +188,7 @@ export default function SettingsPage() {
 {`{
   "mcpServers": {
     "codegraph-cloud": {
-      "url": "https://your-domain.com/mcp",
+      "url": "http://localhost:3002/mcp",
       "headers": {
         "Authorization": "Bearer cgk_your_api_key",
         "X-Project-Id": "proj_your_project_id"

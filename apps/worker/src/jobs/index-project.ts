@@ -11,6 +11,8 @@ import { db } from '../db.js';
 import { projects, indexJobs, syncJobs } from '@codegraph-cloud/db-schema';
 import { CodeGraphEngine } from '@codegraph-cloud/core';
 import type { Job } from 'pg-boss';
+import { queryHandler } from '../query/handler.js';
+import { uploadIndexIfConfigured } from '../storage/index.js';
 
 const GIT_WORKSPACE_DIR = process.env.GIT_WORKSPACE_DIR || './data/git-workspace';
 
@@ -83,7 +85,20 @@ export async function handleIndexProject(job: Job<IndexProjectData>): Promise<vo
       })
       .where(eq(projects.id, projectId));
 
+    // Re-read project for latest synced commit (updated by sync job)
+    const updatedResult = await db.select().from(projects).where(eq(projects.id, projectId));
+    const updatedProject = updatedResult[0];
+
+    engine.setIndexMetadata({
+      commitSha: updatedProject?.lastSyncedCommit ?? project.lastSyncedCommit,
+      indexedAt: Date.now(),
+    });
+
+    await uploadIndexIfConfigured(projectId, workDir);
+
     engine.close();
+    queryHandler.invalidate(projectId);
+    await notifyMcpInvalidate(projectId);
 
     console.log(`[IndexWorker] Index completed for ${projectId}: ${result.filesIndexed} files indexed`);
 
@@ -101,5 +116,14 @@ export async function handleIndexProject(job: Job<IndexProjectData>): Promise<vo
       .where(eq(indexJobs.id, indexJobId));
 
     throw error;
+  }
+}
+
+async function notifyMcpInvalidate(projectId: string): Promise<void> {
+  const mcpUrl = process.env.MCP_INTERNAL_URL || 'http://localhost:3002';
+  try {
+    await fetch(`${mcpUrl}/internal/invalidate/${projectId}`, { method: 'POST' });
+  } catch {
+    // MCP may not be running in all environments
   }
 }
