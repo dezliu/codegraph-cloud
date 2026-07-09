@@ -16,10 +16,27 @@ export default function SettingsPage() {
   const [showCreateKeyModal, setShowCreateKeyModal] = useState(false);
   const [newKeyValue, setNewKeyValue] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adminApiKeyInput, setAdminApiKeyInput] = useState('');
+  const [adminKeySaved, setAdminKeySaved] = useState(false);
 
   useEffect(() => {
+    setAdminKeySaved(apiClient.hasApiKey());
     fetchApiKeys();
   }, []);
+
+  function handleSaveAdminApiKey(e: React.FormEvent) {
+    e.preventDefault();
+    apiClient.setApiKey(adminApiKeyInput);
+    setAdminKeySaved(true);
+    setAdminApiKeyInput('');
+    fetchApiKeys();
+  }
+
+  function handleClearAdminApiKey() {
+    apiClient.clearApiKey();
+    setAdminKeySaved(false);
+    setApiKeys([]);
+  }
 
   async function fetchApiKeys() {
     try {
@@ -46,6 +63,48 @@ export default function SettingsPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
+
+      <div className="bg-white border rounded-lg p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-2">Admin API Key</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Required to call the API from this panel. Run <code className="px-1 bg-gray-100 rounded">pnpm seed:admin</code>{' '}
+          on a fresh database, then paste the key here or set{' '}
+          <code className="px-1 bg-gray-100 rounded">NEXT_PUBLIC_ADMIN_API_KEY</code> in{' '}
+          <code className="px-1 bg-gray-100 rounded">apps/admin/.env.local</code>.
+        </p>
+
+        {adminKeySaved && apiClient.getMaskedApiKey() ? (
+          <div className="mb-4 flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded">
+            <span className="text-sm text-green-800">
+              Configured: <code>{apiClient.getMaskedApiKey()}</code>
+            </span>
+            <button
+              onClick={handleClearAdminApiKey}
+              className="text-sm text-red-600 hover:underline"
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
+        <form onSubmit={handleSaveAdminApiKey} className="flex gap-2">
+          <input
+            type="password"
+            value={adminApiKeyInput}
+            onChange={(e) => setAdminApiKeyInput(e.target.value)}
+            placeholder="cgk_..."
+            className="flex-1 px-3 py-2 border rounded font-mono text-sm"
+            autoComplete="off"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            disabled={!adminApiKeyInput.trim()}
+          >
+            Save
+          </button>
+        </form>
+      </div>
 
       {/* API Keys Section */}
       <div className="bg-white border rounded-lg p-6 mb-6">

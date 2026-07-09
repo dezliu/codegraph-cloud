@@ -93,6 +93,13 @@ cp .env.example .env
 # Run database migrations (required before starting services)
 pnpm db:migrate
 
+# Create default org + admin API key (first-time setup)
+pnpm seed:admin
+
+# Configure admin panel (paste the key printed by seed:admin)
+cp apps/admin/.env.local.example apps/admin/.env.local
+# Edit apps/admin/.env.local and set NEXT_PUBLIC_ADMIN_API_KEY
+
 # Start all services in development mode
 pnpm dev
 ```
@@ -113,6 +120,7 @@ pnpm dev
 ### 1. Create a Project
 
 Via Admin Panel (`http://localhost:3003`):
+- Ensure an admin API key is configured (`pnpm seed:admin`, then set `NEXT_PUBLIC_ADMIN_API_KEY` or paste in Settings)
 - Navigate to Projects → New Project
 - Enter repository URL and Git provider
 - Save to create the project

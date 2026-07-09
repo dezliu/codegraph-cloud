@@ -15,6 +15,7 @@ interface Project {
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
@@ -22,11 +23,14 @@ export default function ProjectsPage() {
   }, []);
 
   async function fetchProjects() {
+    setError(null);
     try {
       const res = await apiClient.listProjects();
       setProjects(res.data || []);
-    } catch (error) {
-      console.error('Failed to fetch projects:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch projects';
+      setError(message);
+      console.error('Failed to fetch projects:', err);
     } finally {
       setLoading(false);
     }
@@ -43,6 +47,16 @@ export default function ProjectsPage() {
           New Project
         </button>
       </div>
+
+      {error ? (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="font-medium text-amber-900">Unable to load projects</p>
+          <p className="text-sm text-amber-800 mt-1">{error}</p>
+          <a href="/settings" className="inline-block mt-3 text-sm text-blue-700 hover:underline">
+            Configure API key in Settings →
+          </a>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="text-gray-500">Loading...</div>

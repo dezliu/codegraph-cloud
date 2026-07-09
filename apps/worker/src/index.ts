@@ -28,6 +28,18 @@ app.use('*', cors());
 
 app.get('/health', (c) => c.json({ status: 'ok', service: 'worker' }));
 
+app.get('/', (c) =>
+  c.json({
+    service: 'worker',
+    status: 'ok',
+    endpoints: {
+      health: 'GET /health',
+      query: 'POST /query',
+      projectStatus: 'GET /status/:projectId',
+    },
+  }),
+);
+
 app.post('/query', async (c) => {
   const body = await c.req.json();
   const { projectId, tool, args } = body;

@@ -6,6 +6,7 @@
   "scripts": {
     "predev": "node scripts/free-dev-ports.mjs",
     "dev": "pnpm -r --parallel dev",
+    "seed:admin": "node scripts/seed-admin.mjs",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "db:migrate": "pnpm --filter @codegraph-cloud/db-schema migrate",
